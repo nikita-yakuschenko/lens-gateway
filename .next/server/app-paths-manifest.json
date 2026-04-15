@@ -1,6 +1,4 @@
 {
-  "/[entity]/get/route": "app/[entity]/get/route.js",
   "/route": "app/route.js",
-  "/datalens/[entity]/get/route": "app/datalens/[entity]/get/route.js",
-  "/get/route": "app/get/route.js"
+  "/connector/route": "app/connector/route.js"
 }
