@@ -166,6 +166,52 @@ const handleDataLensProxy = async (req, res) => {
 
 app.get("/:entity/get", handleEntityProxy);
 app.get("/datalens/:entity/get", handleDataLensProxy);
+app.get("/get", async (req, res) => {
+  const entity = String(req.query.entity || "sorders");
+  const code = req.query.code || DEFAULT_CODE;
+
+  try {
+    const rows = await fetchEntityRows(entity, code);
+    const normalizedRows = rows.map((row) => {
+      const flat = toFlatRecord(row);
+      const out = {};
+
+      for (const [key, value] of Object.entries(flat)) {
+        const asciiKey = toAsciiKey(key) || "field";
+        out[asciiKey] = toDataLensScalar(value);
+      }
+
+      return out;
+    });
+
+    const allKeys = Array.from(new Set(normalizedRows.flatMap((row) => Object.keys(row))));
+    const stableRows = normalizedRows.map((row) => {
+      const out = {};
+      for (const key of allKeys) {
+        out[key] = row[key] ?? "";
+      }
+      return out;
+    });
+
+    return res.json(stableRows);
+  } catch (error) {
+    console.error("Proxy error:", {
+      entity,
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+
+    const status = error.response?.status || 502;
+    res.status(status).json({
+      error: "proxy_request_failed",
+      message: error.message,
+      upstreamStatus: error.response?.status || null,
+      upstreamData: error.response?.data || null,
+    });
+  }
+});
 app.get("/", (req, res) => res.json({ status: "ok" }));
 
 app.listen(PORT, () => {
