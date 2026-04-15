@@ -19,6 +19,23 @@ if (!SOURCE_BASE_URL || !LOGIN || !PASSWORD) {
 const authHeader = `Basic ${Buffer.from(`${LOGIN}:${PASSWORD}`, "utf8").toString("base64")}`;
 const normalizedBaseUrl = SOURCE_BASE_URL.replace(/\/+$/, "");
 
+const CYR_TO_LAT = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i",
+  й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
+  у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "",
+  э: "e", ю: "yu", я: "ya",
+};
+
+const toAsciiKey = (key) =>
+  String(key)
+    .toLowerCase()
+    .split("")
+    .map((ch) => CYR_TO_LAT[ch] ?? ch)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+
 const toFlatRecord = (record) => {
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     return {};
@@ -36,30 +53,73 @@ const toFlatRecord = (record) => {
   return flat;
 };
 
+const fetchEntityRows = async (entity, code) => {
+  const response = await axios.get(`${normalizedBaseUrl}/${entity}/get`, {
+    params: { code },
+    timeout: REQUEST_TIMEOUT_MS,
+    headers: {
+      Authorization: authHeader,
+      Accept: "application/json; charset=utf-8",
+    },
+    responseType: "json",
+  });
+
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response.data?.data)) {
+    return response.data.data;
+  }
+
+  return [];
+};
+
 const handleEntityProxy = async (req, res) => {
   const entity = req.params.entity;
   const code = req.query.code || DEFAULT_CODE;
 
   try {
-    const response = await axios.get(`${normalizedBaseUrl}/${entity}/get`, {
-      params: { code },
-      timeout: REQUEST_TIMEOUT_MS,
-      headers: {
-        Authorization: authHeader,
-        Accept: "application/json; charset=utf-8",
-      },
-      responseType: "json",
+    const rows = await fetchEntityRows(entity, code);
+    return res.json(rows.map(toFlatRecord));
+  } catch (error) {
+    console.error("Proxy error:", {
+      entity,
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      data: error.response?.data,
     });
 
-    if (Array.isArray(response.data)) {
-      return res.json(response.data.map(toFlatRecord));
-    }
+    const status = error.response?.status || 502;
+    res.status(status).json({
+      error: "proxy_request_failed",
+      message: error.message,
+      upstreamStatus: error.response?.status || null,
+      upstreamData: error.response?.data || null,
+    });
+  }
+};
 
-    if (Array.isArray(response.data?.data)) {
-      return res.json(response.data.data.map(toFlatRecord));
-    }
+const handleDataLensProxy = async (req, res) => {
+  const entity = req.params.entity;
+  const code = req.query.code || DEFAULT_CODE;
 
-    return res.json([]);
+  try {
+    const rows = await fetchEntityRows(entity, code);
+    const normalized = rows.map((row) => {
+      const flat = toFlatRecord(row);
+      const out = {};
+
+      for (const [key, value] of Object.entries(flat)) {
+        const asciiKey = toAsciiKey(key) || "field";
+        out[asciiKey] = value;
+      }
+
+      return out;
+    });
+
+    return res.json(normalized);
   } catch (error) {
     console.error("Proxy error:", {
       entity,
@@ -80,6 +140,8 @@ const handleEntityProxy = async (req, res) => {
 };
 
 app.get("/:entity/get", handleEntityProxy);
+app.get("/datalens/:entity/get", handleDataLensProxy);
+app.get("/", (req, res) => res.json({ status: "ok" }));
 
 app.listen(PORT, () => {
   console.log(`Proxy server running on port ${PORT}`);
