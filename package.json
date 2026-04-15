@@ -1,0 +1,14 @@
+{
+  "name": "datalens-orders-proxy",
+  "version": "1.0.0",
+  "description": "Minimal proxy API for DataLens",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
