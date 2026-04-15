@@ -19,6 +19,23 @@ if (!SOURCE_BASE_URL || !LOGIN || !PASSWORD) {
 const authHeader = `Basic ${Buffer.from(`${LOGIN}:${PASSWORD}`, "utf8").toString("base64")}`;
 const normalizedBaseUrl = SOURCE_BASE_URL.replace(/\/+$/, "");
 
+const toFlatRecord = (record) => {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return {};
+  }
+
+  const flat = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== null && typeof value === "object") {
+      flat[key] = JSON.stringify(value);
+    } else {
+      flat[key] = value;
+    }
+  }
+
+  return flat;
+};
+
 const handleEntityProxy = async (req, res) => {
   const entity = req.params.entity;
   const code = req.query.code || DEFAULT_CODE;
@@ -35,11 +52,11 @@ const handleEntityProxy = async (req, res) => {
     });
 
     if (Array.isArray(response.data)) {
-      return res.json(response.data);
+      return res.json(response.data.map(toFlatRecord));
     }
 
     if (Array.isArray(response.data?.data)) {
-      return res.json(response.data.data);
+      return res.json(response.data.data.map(toFlatRecord));
     }
 
     return res.json([]);
