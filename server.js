@@ -6,23 +6,25 @@ const app = express();
 const PORT = Number(process.env.PORT || 3010);
 const DEFAULT_CODE = process.env.DEFAULT_CODE || "919";
 
-const SOURCE_URL = process.env.SOURCE_URL;
+const SOURCE_BASE_URL = process.env.SOURCE_BASE_URL || process.env.SOURCE_URL;
 const LOGIN = process.env.SOURCE_LOGIN;
 const PASSWORD = process.env.SOURCE_PASSWORD;
 const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 30000);
 
-if (!SOURCE_URL || !LOGIN || !PASSWORD) {
-  console.error("Missing required env vars: SOURCE_URL, SOURCE_LOGIN, SOURCE_PASSWORD");
+if (!SOURCE_BASE_URL || !LOGIN || !PASSWORD) {
+  console.error("Missing required env vars: SOURCE_BASE_URL, SOURCE_LOGIN, SOURCE_PASSWORD");
   process.exit(1);
 }
 
 const authHeader = `Basic ${Buffer.from(`${LOGIN}:${PASSWORD}`, "utf8").toString("base64")}`;
+const normalizedBaseUrl = SOURCE_BASE_URL.replace(/\/+$/, "");
 
-app.get("/proxy/datalens/orders", async (req, res) => {
+const handleEntityProxy = async (req, res) => {
+  const entity = req.params.entity;
   const code = req.query.code || DEFAULT_CODE;
 
   try {
-    const response = await axios.get(SOURCE_URL, {
+    const response = await axios.get(`${normalizedBaseUrl}/${entity}/get`, {
       params: { code },
       timeout: REQUEST_TIMEOUT_MS,
       headers: {
@@ -32,19 +34,18 @@ app.get("/proxy/datalens/orders", async (req, res) => {
       responseType: "json",
     });
 
-    const sourceData = Array.isArray(response.data?.data) ? response.data.data : [];
+    if (Array.isArray(response.data)) {
+      return res.json(response.data);
+    }
 
-    const transformed = sourceData.map((item) => ({
-      number: item?.["Номер"] ?? null,
-      date: item?.["Дата"] ?? null,
-      contract: item?.["Договор"] ?? null,
-      organization: item?.["Организация"] ?? null,
-      manager: item?.["Ответственный"] ?? null,
-    }));
+    if (Array.isArray(response.data?.data)) {
+      return res.json(response.data.data);
+    }
 
-    res.json(transformed);
+    return res.json([]);
   } catch (error) {
     console.error("Proxy error:", {
+      entity,
       message: error.message,
       code: error.code,
       status: error.response?.status,
@@ -59,7 +60,9 @@ app.get("/proxy/datalens/orders", async (req, res) => {
       upstreamData: error.response?.data || null,
     });
   }
-});
+};
+
+app.get("/:entity/get", handleEntityProxy);
 
 app.listen(PORT, () => {
   console.log(`Proxy server running on port ${PORT}`);
