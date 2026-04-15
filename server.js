@@ -53,6 +53,22 @@ const toFlatRecord = (record) => {
   return flat;
 };
 
+const toDataLensScalar = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+};
+
 const fetchEntityRows = async (entity, code) => {
   const response = await axios.get(`${normalizedBaseUrl}/${entity}/get`, {
     params: { code },
@@ -107,19 +123,28 @@ const handleDataLensProxy = async (req, res) => {
 
   try {
     const rows = await fetchEntityRows(entity, code);
-    const normalized = rows.map((row) => {
+    const normalizedRows = rows.map((row) => {
       const flat = toFlatRecord(row);
       const out = {};
 
       for (const [key, value] of Object.entries(flat)) {
         const asciiKey = toAsciiKey(key) || "field";
-        out[asciiKey] = value;
+        out[asciiKey] = toDataLensScalar(value);
       }
 
       return out;
     });
 
-    return res.json(normalized);
+    const allKeys = Array.from(new Set(normalizedRows.flatMap((row) => Object.keys(row))));
+    const stableRows = normalizedRows.map((row) => {
+      const out = {};
+      for (const key of allKeys) {
+        out[key] = row[key] ?? "";
+      }
+      return out;
+    });
+
+    return res.json(stableRows);
   } catch (error) {
     console.error("Proxy error:", {
       entity,
